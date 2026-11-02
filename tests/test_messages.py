@@ -3,8 +3,9 @@ import chat
 
 def test_chat_history_returns_correct_length(monkeypatch):
     captured_histories = []
+    temperature = 1
 
-    def mock_send_message(history):
+    def mock_send_message(history, temperature, max_tokens):
         captured_histories.append([dict(msg) for msg in history])
         return "Mock response", {"prompt_tokens": 10, "completion_tokens": 5}
 

@@ -3,6 +3,7 @@ import requests
 import json
 from dotenv import load_dotenv
 from errors import APIError
+from config import MODEL, MAX_TOKENS
 
 load_dotenv()
 
@@ -10,7 +11,7 @@ api_key = os.getenv("API_KEY")
 url = os.getenv("API_URL")
 DONE = object()
 
-def send_message(messages):
+def send_message(messages, temperature, max_tokens=MAX_TOKENS):
     pieces = []
     usage = {}
     headers = {
@@ -19,10 +20,12 @@ def send_message(messages):
     }
 
     payload = {
-        "model": "gpt-4o-mini",
+        "model": MODEL,
         "messages": messages,
         "stream": True,
-        "stream_options": {"include_usage": True} 
+        "stream_options": {"include_usage": True}, 
+        "temperature": temperature,
+        "max_tokens": max_tokens
     }
 
     try:
