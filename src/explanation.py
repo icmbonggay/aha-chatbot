@@ -103,10 +103,11 @@ def format_card(card):
 
 
 def card_history_text(card):
-  """Compact text stored in chat history. Key terms are left out to save
-  tokens; the check question stays so the model can grade an answer."""
-  return (
-    f"{card.summary}\n\n"
-    f"Analogy: {card.analogy}\n\n"
-    f"Check question: {card.check_question}"
-  )
+  """Compact text stored in chat history in place of the card.
+
+  Written as plain prose on purpose. The model copies the style of its
+  own earlier replies, so labels like "Analogy:" here leak into every
+  normal answer that follows. Key terms are left out to save tokens;
+  the check question stays so the model can grade the user's answer.
+  """
+  return f"{card.summary} {card.analogy} To check your understanding: {card.check_question}"

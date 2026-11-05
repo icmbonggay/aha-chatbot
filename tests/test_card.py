@@ -134,6 +134,9 @@ def test_history_text_keeps_question_and_drops_key_terms():
     assert VALID_CARD["analogy"] in text
     assert VALID_CARD["check_question"] in text
     assert "Chlorophyll" not in text
+    # Labels in history get copied into later normal replies.
+    assert "Analogy:" not in text
+    assert "Check question:" not in text
 
 
 class FakeResponse:
