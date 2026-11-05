@@ -5,6 +5,7 @@ import time
 import random
 from dotenv import load_dotenv
 from errors import APIError, NoResponseError
+from explanation import card_response_format
 from config import (MODEL, MAX_TOKENS, TIMEOUTS, MAX_RETRIES, RETRYABLE_STATUS,
                     BASE_DELAY, BACKOFF_CAP, MAX_RETRY_AFTER)
 
@@ -14,42 +15,69 @@ api_key = os.getenv("API_KEY")
 url = os.getenv("API_URL")
 DONE = object()
 
-def send_message(messages, temperature, max_tokens=MAX_TOKENS):
-    pieces = []
-    usage = {}
+def _post(payload, stream=False):
+    """Send one request to the API and return the response.
+
+    Shared by every request type, so error handling lives in one place.
+    Raises APIError for a non-200 reply and NoResponseError when the
+    server can't be reached.
+    """
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-type": "application/json"
     }
 
+    try:
+        response = requests.post(url, headers=headers, json=payload, stream=stream, timeout=TIMEOUTS)
+    except requests.exceptions.RequestException as e:
+        raise _network_error(e) from e
+
+    if response.status_code != 200:
+        raw_retry_after = response.headers.get("Retry-After")
+        retry_after = None
+        if raw_retry_after is not None:
+            retry_after = int(raw_retry_after)
+        try:
+            error_json = response.json()
+            error_message = error_json.get("error", {}).get("message", response.text)
+        except Exception:
+            error_message = response.text
+
+        raise APIError(error_message, response.status_code, retry_after)
+
+    return response
+
+
+def _network_error(e):
+    """Turn a requests exception into one of our own errors."""
+    no_response = (
+        requests.exceptions.ReadTimeout,
+        requests.exceptions.ConnectionError,
+        requests.exceptions.ConnectTimeout,
+    )
+    if isinstance(e, no_response):
+        return NoResponseError(f"No usable response error: {str(e)}")
+    return APIError(f"Network error: {str(e)}", 500)
+
+
+def send_message(messages, temperature, max_tokens=MAX_TOKENS):
+    pieces = []
+    usage = {}
     payload = {
         "model": MODEL,
         "messages": messages,
         "stream": True,
-        "stream_options": {"include_usage": True}, 
+        "stream_options": {"include_usage": True},
         "temperature": temperature,
         "max_tokens": max_tokens
     }
 
+    response = _post(payload, stream=True)
+
+    # The connection can still drop while chunks are arriving,
+    # so reading the stream needs its own error handling.
     try:
-        response = requests.post(url, headers=headers, json=payload, stream=True, timeout=TIMEOUTS)
-        
-
-        if response.status_code != 200:
-            raw_retry_after = response.headers.get("Retry-After")
-            retry_after = None
-            if raw_retry_after is not None:
-                retry_after = int(raw_retry_after)
-            try:
-                error_json = response.json()
-                error_message = error_json.get("error", {}).get("message", response.text)
-            except Exception:
-                error_message = response.text
-                
-            raise APIError(error_message, response.status_code, retry_after)
-
         for line in response.iter_lines():
-            # print(line)
             parsed = parse_sse(line)
 
             if parsed is None:
@@ -62,17 +90,37 @@ def send_message(messages, temperature, max_tokens=MAX_TOKENS):
             else:
                 print(parsed, end="", flush=True)
                 pieces.append(parsed)
-        
-       
-    except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError, requests.exceptions.ConnectTimeout) as e:
-        raise NoResponseError(f"No usable response error: {str(e)}") from e
-           
+
     except requests.exceptions.RequestException as e:
-        raise APIError(f"Network error: {str(e)}", 500) from e
-        
+        raise _network_error(e) from e
+
     except (KeyError, IndexError) as e:
         raise APIError(f"Malformed response from API: {str(e)}", 500) from e
- 
+
+
+def send_card(messages, temperature, max_tokens=MAX_TOKENS):
+    """Ask for an explanation card. Returns (content, refusal, usage).
+
+    No streaming here: the reply is JSON, so printing it chunk by chunk
+    would show raw JSON to the user. Validation happens in the caller.
+    """
+    payload = {
+        "model": MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "response_format": card_response_format(),
+    }
+
+    response = _post(payload)
+
+    try:
+        data = response.json()
+        message = data["choices"][0]["message"]
+        return message.get("content"), message.get("refusal"), data.get("usage", {})
+    except (ValueError, KeyError, IndexError) as e:
+        raise APIError(f"Malformed response from API: {str(e)}", 500) from e
+
 
 def parse_sse(line):
     if line == b'':
