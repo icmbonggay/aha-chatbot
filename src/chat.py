@@ -1,8 +1,9 @@
 from history import trim_history
 from pathlib import Path
-from client import send_message, call_with_retry
+from client import send_message, send_card, call_with_retry
 from config import INPUT_RATE, OUTPUT_RATE, BUDGET, TEMPERATURE, MAX_TOKENS
-from errors import APIError, NoResponseError
+from errors import APIError, NoResponseError, CardError, RefusalError
+from explanation import request_card, card_request, format_card, card_history_text
 
 
 
@@ -43,6 +44,21 @@ def parse_settings(text, settings):
             raise ValueError(f"Unknown setting '{key}'. Use temperature or max_tokens")
     return updated
 
+def parse_card(text):
+    """Returns the topic the user asked for."""
+    topic = text.removeprefix("/card")
+    topic = topic.strip()
+    if topic == "":
+        raise ValueError("/card must be followed with a topic")
+
+    return topic
+
+
+
+def send_card_with_retry(messages, temperature, max_tokens):
+    """send_card wrapped in the HTTP retry (429, 500, timeouts)."""
+    return call_with_retry(send_card, messages, temperature, max_tokens)
+
 
 def friendly_error(e):
     if isinstance(e, NoResponseError):
@@ -82,6 +98,29 @@ def main():
                     print("Settings:", settings)
                 except ValueError as e:
                     print("Settings not changed:", e)
+            case _ if text == "/card" or text.startswith("/card "):
+                try:
+                    topic = parse_card(text)
+                except ValueError as e:
+                    print("Invalid value... try again: ", e)
+                    continue
+
+                # Card requests get the system prompt only, not the whole chat.
+                messages = [history[0], card_request(topic)]
+                try:
+                    card = request_card(send_card_with_retry, messages, settings["temperature"],
+                                        settings["max_tokens"], usage_history)
+                except RefusalError as e:
+                    print("The model declined to make that card:", e)
+                except CardError as e:
+                    print(e)
+                except APIError as e:
+                    print(friendly_error(e))
+                else:
+                    print(format_card(card))
+                    history.append({"role": "user", "content": f"Explain {topic}."})
+                    history.append({"role": "assistant", "content": card_history_text(card)})
+                    history = trim_history(history, BUDGET)
             case _:
                 history.append({"role": "user", "content": text})
                 history = trim_history(history, BUDGET)

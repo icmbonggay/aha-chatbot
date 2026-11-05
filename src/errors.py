@@ -10,3 +10,10 @@ class NoResponseError(APIError):
 
   def __init__(self, message="No usable response."):
     super().__init__(message)
+
+class CardError(Exception):
+  """The model couldn't produce a valid explanation card."""
+
+
+class RefusalError(CardError):
+  """The model declined to make the card. Retrying won't help."""

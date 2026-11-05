@@ -136,3 +136,4 @@ def test_send_message_turns_timeout_into_no_response_error(monkeypatch):
         client.send_message([], 0.3)
 
     assert error.value.status_code is None
+ 
