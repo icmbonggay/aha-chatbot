@@ -1,7 +1,8 @@
-from history import trim_history
+from compaction import compact_history
 from pathlib import Path
-from client import send_message, send_card, call_with_retry
-from config import INPUT_RATE, OUTPUT_RATE, BUDGET, TEMPERATURE, MAX_TOKENS
+from client import send_message, send_card, send_summary, call_with_retry
+from config import (INPUT_RATE, OUTPUT_RATE, BUDGET, TEMPERATURE, MAX_TOKENS,
+                    SUMMARY_TEMPERATURE, SUMMARY_MAX_TOKENS)
 from errors import APIError, NoResponseError, CardError, RefusalError
 from explanation import request_card, card_request, format_card, card_history_text
 
@@ -60,6 +61,24 @@ def send_card_with_retry(messages, temperature, max_tokens):
     return call_with_retry(send_card, messages, temperature, max_tokens)
 
 
+def make_summarizer(usage_history):
+    def summarize(messages):
+        text, usage = call_with_retry(send_summary, messages, SUMMARY_TEMPERATURE, SUMMARY_MAX_TOKENS)
+        if usage:
+            usage_history.append(usage)
+        return text
+    return summarize
+
+
+def compact(history, summarize):
+    """Compact the history, keeping it unchanged if the summary request fails."""
+    try:
+        return compact_history(history, BUDGET, summarize)
+    except APIError as e:
+        print("Couldn't summarize older messages, so the full history was kept.", friendly_error(e))
+        return history
+
+
 def friendly_error(e):
     if isinstance(e, NoResponseError):
         return "Couldn't reach the server. Check your internet connection and try again."
@@ -78,6 +97,7 @@ def main():
     history = [{"role": "system", "content": system_prompt}]
     usage_history = []
     settings = {"temperature": TEMPERATURE, "max_tokens": MAX_TOKENS}
+    summarize = make_summarizer(usage_history)
 
     while True:
         text = input("Enter your prompt: ")
@@ -120,10 +140,10 @@ def main():
                     print(format_card(card))
                     history.append({"role": "user", "content": f"Explain {topic}."})
                     history.append({"role": "assistant", "content": card_history_text(card)})
-                    history = trim_history(history, BUDGET)
+                    history = compact(history, summarize)
             case _:
                 history.append({"role": "user", "content": text})
-                history = trim_history(history, BUDGET)
+                history = compact(history, summarize)
                 try:
                     response, usage = call_with_retry(send_message, history, settings["temperature"], settings["max_tokens"])
                 except APIError as e:
