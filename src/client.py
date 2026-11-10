@@ -122,6 +122,24 @@ def send_card(messages, temperature, max_tokens=MAX_TOKENS):
         raise APIError(f"Malformed response from API: {str(e)}", 500) from e
 
 
+def send_summary(messages, temperature, max_tokens=MAX_TOKENS):
+    """Ask for a history summary. Returns (content, usage) without streaming."""
+    payload = {
+        "model": MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    response = _post(payload)
+
+    try:
+        data = response.json()
+        return data["choices"][0]["message"]["content"] or "", data.get("usage", {})
+    except (ValueError, KeyError, IndexError) as e:
+        raise APIError(f"Malformed response from API: {str(e)}", 500) from e
+
+
 def parse_sse(line):
     if line == b'':
         return None
