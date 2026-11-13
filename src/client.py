@@ -60,7 +60,13 @@ def _network_error(e):
     return APIError(f"Network error: {str(e)}", 500)
 
 
-def send_message(messages, temperature, max_tokens=MAX_TOKENS):
+def send_message(messages, temperature, max_tokens=MAX_TOKENS, echo=True):
+    """Stream a reply and return (text, usage).
+
+    echo=True prints the reply as it arrives (the terminal chat).
+    echo=False stays quiet, for callers with no terminal, like the
+    browser extension server.
+    """
     pieces = []
     usage = {}
     payload = {
@@ -83,12 +89,14 @@ def send_message(messages, temperature, max_tokens=MAX_TOKENS):
             if parsed is None:
                 continue
             elif parsed is DONE:
-                print("\n")
+                if echo:
+                    print("\n")
                 return "".join(pieces), usage
             elif isinstance(parsed, dict):
                 usage = parsed
             else:
-                print(parsed, end="", flush=True)
+                if echo:
+                    print(parsed, end="", flush=True)
                 pieces.append(parsed)
 
     except requests.exceptions.RequestException as e:
