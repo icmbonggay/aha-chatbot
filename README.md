@@ -18,6 +18,23 @@ It also has a few commands:
 
 Long conversations don't lose their past. When the history gets too big for my token budget, the oldest turns are replaced by a summary of what has already been explained, what analogies were used and what I'm still confused about, so the assistant can build on earlier answers instead of starting over.
 
+## Explain anything in Chrome
+
+Highlight text on any web page, right-click, and choose **Explain "..." like I'm five**. The explanation shows up in a bubble next to the text.
+
+It has two parts:
+
+- `src/explain_server.py`: a small local server (Python standard library, no new dependencies) that reuses the same client, system prompt and retries as the terminal chat. It only listens on `127.0.0.1` and refuses requests that don't come from a Chrome extension, so websites can't spend my API credits.
+- `extension/`: a Manifest V3 Chrome extension that adds the right-click menu item, sends the highlighted text to the server and shows the reply.
+
+Setup:
+
+1. Start the server from the repo root and leave it running: `python src/explain_server.py`
+2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the `extension` folder.
+3. Highlight some text, right-click, and pick the AHA item. Press Escape or click outside the bubble to close it.
+
+Chrome doesn't let extensions run on its own pages (`chrome://`, the Web Store) or inside its built-in PDF viewer, so the bubble can't appear there.
+
 ## Architecture
 
 ```
